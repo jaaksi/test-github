@@ -1,15 +1,12 @@
-name: Release
+name: Release Build
 
 on:
   push:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
-  release:
+  publish-tauri:
     permissions:
       contents: write
     strategy:
@@ -17,44 +14,60 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
+            args: '--target aarch64-apple-darwin,x86_64-apple-darwin'
+            rust-targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
+            rust-targets: ''
           - platform: 'windows-latest'
             args: ''
+            rust-targets: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-action@stable
+      # ✅ 修复：添加 pnpm/action-setup，确保 pnpm 缓存正常工作
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          targets: ${{ matrix.args }}
+          version: latest
 
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
-          cache: pnpm
+          node-version: 'lts/*'
+          cache: 'pnpm'
 
-      - name: Install pnpm dependencies
-        run: pnpm install
+      # ✅ 修复：修正 Action 名称为 rust-toolchain，并动态设置 macOS 双架构 targets
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
 
-      - name: Build Tauri app
+      # ✅ 修复：补充 Linux 系统依赖（Tauri v2）
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      # ✅ 新增：Rust 缓存加速，减少编译时间
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      # ✅ 修复：补充 Release 发布配置，自动创建草稿 Release
+      - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tagName: v__VERSION__
+          releaseName: 'App v__VERSION__'
+          releaseBody: 'See the assets to download this version.'
+          releaseDraft: true
+          prerelease: false
           args: ${{ matrix.args }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: bundles-${{ matrix.platform }}
-          path: |
-            src-tauri/target/release/bundle/**
-            src-tauri/target/release/test-github*
