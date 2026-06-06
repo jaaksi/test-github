@@ -58,7 +58,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install frontend deps
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
       # ✅ 修复：补充 Release 发布配置，自动创建草稿 Release
       - name: Build and Release
